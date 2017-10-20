@@ -109,6 +109,28 @@ $defaultConfig = [
     'contentNegotiateImages' => true,
 
     /**
+     * Various optimizations that might be enabled or disabled. Most of the configuration-
+     * exposed optimizations have some trade, be it speed or image quality, which is why
+     * it's possible to disable them through configuration
+     *
+     * @var array
+     */
+    'optimizations' => [
+        /**
+         * Tries to calculate what the transformed output size of images will be before
+         * loading the image into Imagick, which set a hint to libjpeg that enables
+         * "shrink-on-load", which significantly increases speed or resizing.
+         *
+         * Tradeoffs: Transformations have to adjust parameters based on new input size,
+         * some parameters will be one pixel off. Image quality should be the same for
+         * most images, but there is always the possibility of slightly worse quality
+         *
+         * @var boolean
+         */
+        'jpegSizeHint' => true,
+    ],
+
+    /**
      * HTTP cache header settings that are applied to resources that do not explicitly set
      * other values. For instance, the `image` resource sets a very long `max-age`, as it
      * shouldn't change over time. The `metadata` resource however could potentially change
@@ -153,8 +175,59 @@ $defaultConfig = [
          * - `https`
          *     Will always use `https` as the protocol, replacing `http` with `https` in the
          *     incoming URL, if that is the case.
+         *
+         * @var string
          */
         'protocol' => 'incoming',
+    ],
+
+    /**
+     * Image transformations
+     *
+     * An associative array where the keys identify the name used in URLs to trigger the
+     * transformation. The value of each element in this array can be on of the following:
+     *
+     * 1) A string representing a class name of a class extending the
+     *    Imbo\Image\Transformation\Transformation abstract class
+     *
+     * 2) An instance of an object implementing the Imbo\Image\Transformation\Transformation
+     *    abstract class
+     *
+     * 3) A closure returning an instance of an object extending the
+     *    Imbo\Image\Transformation\Transformation abstract class
+     *
+     * @var array
+     */
+    'transformations' => [
+        'autoRotate' => 'Imbo\Image\Transformation\AutoRotate',
+        'blur' => 'Imbo\Image\Transformation\Blur',
+        'border' => 'Imbo\Image\Transformation\Border',
+        'canvas' => 'Imbo\Image\Transformation\Canvas',
+        'clip' => 'Imbo\Image\Transformation\Clip',
+        'compress' => 'Imbo\Image\Transformation\Compress',
+        'contrast' => 'Imbo\Image\Transformation\Contrast',
+        'convert' => 'Imbo\Image\Transformation\Convert',
+        'crop' => 'Imbo\Image\Transformation\Crop',
+        'desaturate' => 'Imbo\Image\Transformation\Desaturate',
+        'drawPois' => 'Imbo\Image\Transformation\DrawPois',
+        'flipHorizontally' => 'Imbo\Image\Transformation\FlipHorizontally',
+        'flipVertically' => 'Imbo\Image\Transformation\FlipVertically',
+        'histogram' => 'Imbo\Image\Transformation\Histogram',
+        'level' => 'Imbo\Image\Transformation\Level',
+        'maxSize' => 'Imbo\Image\Transformation\MaxSize',
+        'modulate' => 'Imbo\Image\Transformation\Modulate',
+        'progressive' => 'Imbo\Image\Transformation\Progressive',
+        'resize' => 'Imbo\Image\Transformation\Resize',
+        'rotate' => 'Imbo\Image\Transformation\Rotate',
+        'sepia' => 'Imbo\Image\Transformation\Sepia',
+        'sharpen' => 'Imbo\Image\Transformation\Sharpen',
+        'smartSize' => 'Imbo\Image\Transformation\SmartSize',
+        'strip' => 'Imbo\Image\Transformation\Strip',
+        'thumbnail' => 'Imbo\Image\Transformation\Thumbnail',
+        'transpose' => 'Imbo\Image\Transformation\Transpose',
+        'transverse' => 'Imbo\Image\Transformation\Transverse',
+        'vignette' => 'Imbo\Image\Transformation\Vignette',
+        'watermark' => 'Imbo\Image\Transformation\Watermark',
     ],
 
     /**
@@ -165,7 +238,7 @@ $defaultConfig = [
      * of each element in this array can be one of the following:
      *
      * 1) A string representing a class name of a class implementing the
-     *    Imbo\EventListener\ListenerInteface interface
+     *    Imbo\EventListener\ListenerInterface interface
      *
      * 2) An instance of an object implementing the Imbo\EventListener\ListenerInterface interface
      *
@@ -270,38 +343,11 @@ $defaultConfig = [
             ],
         ],
 
-        // Image transformations
-        'autoRotate' => 'Imbo\Image\Transformation\AutoRotate',
-        'blur' => 'Imbo\Image\Transformation\Blur',
-        'border' => 'Imbo\Image\Transformation\Border',
-        'canvas' => 'Imbo\Image\Transformation\Canvas',
-        'compress' => 'Imbo\Image\Transformation\Compress',
-        'contrast' => 'Imbo\Image\Transformation\Contrast',
-        'convert' => 'Imbo\Image\Transformation\Convert',
-        'crop' => 'Imbo\Image\Transformation\Crop',
-        'desaturate' => 'Imbo\Image\Transformation\Desaturate',
-        'drawPois' => 'Imbo\Image\Transformation\DrawPois',
-        'flipHorizontally' => 'Imbo\Image\Transformation\FlipHorizontally',
-        'flipVertically' => 'Imbo\Image\Transformation\FlipVertically',
-        'histogram' => 'Imbo\Image\Transformation\Histogram',
-        'level' => 'Imbo\Image\Transformation\Level',
-        'maxSize' => 'Imbo\Image\Transformation\MaxSize',
-        'modulate' => 'Imbo\Image\Transformation\Modulate',
-        'progressive' => 'Imbo\Image\Transformation\Progressive',
-        'resize' => 'Imbo\Image\Transformation\Resize',
-        'rotate' => 'Imbo\Image\Transformation\Rotate',
-        'sepia' => 'Imbo\Image\Transformation\Sepia',
-        'sharpen' => 'Imbo\Image\Transformation\Sharpen',
-        'smartSize' => 'Imbo\Image\Transformation\SmartSize',
-        'strip' => 'Imbo\Image\Transformation\Strip',
-        'thumbnail' => 'Imbo\Image\Transformation\Thumbnail',
-        'transpose' => 'Imbo\Image\Transformation\Transpose',
-        'transverse' => 'Imbo\Image\Transformation\Transverse',
-        'vignette' => 'Imbo\Image\Transformation\Vignette',
-        'watermark' => 'Imbo\Image\Transformation\Watermark',
-
         // Imagick-specific event listener for the built in image transformations
         'imagick' => 'Imbo\EventListener\Imagick',
+
+        // Pluggable output conversion
+        'outputConverter' => 'Imbo\EventListener\LoaderOutputConverterImagick',
     ],
 
     /**
@@ -391,6 +437,40 @@ $defaultConfig = [
      * @var string
      */
     'indexRedirect' => null,
+
+    /**
+     * Input loaders
+     *
+     * Each input loader must implement Imbo\Image\InputLoader\InputLoaderInterface.
+     *
+     * See the Imbo\Image\InputLoader\Basic input loader for the default fallback loader as an
+     * example.
+     *
+     * @var Imbo\Image\InputLoader\InputLoaderInterface[]|string[]
+     */
+    'inputLoaders' => [
+        'basic' => Image\InputLoader\Basic::class,
+    ],
+
+    /**
+     * Custom output converters
+     *
+     * An output converter must implement Imbo\Image\OutputConverter\OutputConverterInterface.
+     *
+     * An output converter work similar to what an input loader does, and configures the current
+     * Imagick instance to return the requested image format. If the Imagick instance is updated,
+     * the plugin must call `$image->hasBeenTransformed(true);` to tell Imbo that the content inside
+     * the Imagick instance has changed.
+     *
+     * If your plugin returns binary data directly, call `$image->setBlob($data)` instead and
+     * _don't_ call `$image->hasBeenTransformed(true)` as you've handled the conversion to binary
+     * data yourself.
+     *
+     * @var Imbo\Image\OutputConverter\OutputConverterInterface[]|string[]
+     */
+    'outputConverters' => [
+        'basic' => Image\OutputConverter\Basic::class,
+    ],
 ];
 
 // Keep all external configuration separate

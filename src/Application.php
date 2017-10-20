@@ -25,7 +25,10 @@ use Imbo\Http\Request\Request,
     Imbo\Storage\StorageInterface,
     Imbo\Http\Response\Formatter,
     Imbo\Resource\ResourceInterface,
-    Imbo\EventListener\Initializer\InitializerInterface;
+    Imbo\Image\TransformationManager,
+    Imbo\EventListener\Initializer\InitializerInterface,
+    Imbo\Image\InputLoaderManager,
+    Imbo\Image\OutputConverterManager;
 
 /**
  * Imbo application
@@ -81,6 +84,33 @@ class Application {
         // Create a router based on the routes in the configuration and internal routes
         $router = new Router($config['routes']);
 
+        // Create a new image transformation manager
+        $transformationManager = new TransformationManager();
+
+        if (isset($config['transformations']) && !is_array($config['transformations'])) {
+            throw new InvalidArgumentException('The "transformations" configuration key must be specified as an array', 500);
+        } else if (isset($config['transformations']) && is_array($config['transformations'])) {
+            $transformationManager->addTransformations($config['transformations']);
+        }
+
+        // Create a loader manager and register any loaders
+        $inputLoaderManager = new InputLoaderManager();
+
+        if (isset($config['inputLoaders']) && !is_array($config['inputLoaders'])) {
+            throw new InvalidArgumentException('The "inputLoaders" configuration key must be specified as an array', 500);
+        } else if (isset($config['inputLoaders']) && is_array($config['inputLoaders'])) {
+            $inputLoaderManager->addLoaders($config['inputLoaders']);
+        }
+
+        // Create a output conversion manager and register any converters
+        $outputConverterManager = new OutputConverterManager();
+
+        if (isset($config['outputConverters']) && !is_array($config['outputConverters'])) {
+            throw new InvalidArgumentException('The "outputConverters" configuration key must be specified as an array', 500);
+        } else if (isset($config['outputConverters']) && is_array($config['outputConverters'])) {
+            $outputConverterManager->addConverters($config['outputConverters']);
+        }
+
         // Create the event manager and the event template
         $eventManager = new EventManager();
         $event = new Event();
@@ -92,6 +122,9 @@ class Application {
             'config' => $config,
             'manager' => $eventManager,
             'accessControl' => $accessControl,
+            'transformationManager' => $transformationManager,
+            'inputLoaderManager' => $inputLoaderManager,
+            'outputConverterManager' => $outputConverterManager,
         ]);
         $eventManager->setEventTemplate($event);
 
@@ -130,20 +163,26 @@ class Application {
             'Imbo\EventListener\DatabaseOperations',
             'Imbo\EventListener\StorageOperations',
             'Imbo\Image\ImagePreparation',
-            'Imbo\EventListener\ImageTransformer',
             'Imbo\EventListener\ResponseSender',
             'Imbo\EventListener\ResponseETag',
             'Imbo\EventListener\HttpCache',
+            'Imbo\Image\TransformationManager' => $transformationManager
         ];
 
         foreach ($eventListeners as $listener => $params) {
+            $name = $listener;
             if (is_string($params)) {
                 $listener = $params;
                 $params = [];
+                $name = $listener;
+            } else if ($params instanceof ListenerInterface) {
+                $listener = $params;
+                $params = [];
+                $name = get_class($listener);
             }
 
-            $eventManager->addEventHandler($listener, $listener, $params)
-                         ->addCallbacks($listener, $listener::getSubscribedEvents());
+            $eventManager->addEventHandler($name, $listener, $params)
+                         ->addCallbacks($name, $listener::getSubscribedEvents());
         }
 
         // Event listener initializers
@@ -164,6 +203,7 @@ class Application {
             }
 
             $eventManager->addInitializer($initializer);
+            $transformationManager->addInitializer($initializer);
         }
 
         // Listeners from configuration
@@ -244,6 +284,8 @@ class Application {
             $eventManager->addEventHandler($name, $resource)
                          ->addCallbacks($name, $resource::getSubscribedEvents());
         }
+
+        $eventManager->trigger('imbo.initialized');
 
         try {
             // Route the request

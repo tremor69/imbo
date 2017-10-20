@@ -34,10 +34,11 @@ interface DatabaseInterface {
      * @param string $user The user which the image belongs to
      * @param string $imageIdentifier Image identifier
      * @param Image $image The image to insert
+     * @param boolean $updateIfDuplicate Whether we should use an update statement if the image id exists, otherwise it'll result in an exception
      * @return boolean Returns true on success or false on failure
      * @throws DatabaseException
      */
-    function insertImage($user, $imageIdentifier, Image $image);
+    function insertImage($user, $imageIdentifier, Image $image, $updateIfDuplicate = true);
 
     /**
      * Delete an image from the database
@@ -85,7 +86,8 @@ interface DatabaseInterface {
      *
      * This method is also responsible for setting a correct "hits" number in the images model.
      *
-     * @param array $users The users which the images belongs to
+     * @param array $users The users which the images belongs to. If an empty array is specified
+     *                     the adapter should return images for all users.
      * @param Query $query A query instance
      * @param Images $model The images model
      * @return array
@@ -116,9 +118,11 @@ interface DatabaseInterface {
     /**
      * Get the last modified timestamp for given users
      *
-     * If the $imageIdentifier parameter is set, return when that image was last updated. If not
-     * set, return the most recent date when one of the specified users last updated any image. If
-     * the provided users does not have any images stored, return the current timestamp.
+     * Find the last modification timestamp of one or more users. If the image identifier parameter
+     * is set the query will only look for that image in the set of users. If none of the specified
+     * users have the image a 404 exception will be thrown. If the image identifier is skipped the
+     * method will return either the current timestamp, or the max timestamp of any of the given
+     * users.
      *
      * @param array $users The users
      * @param string $imageIdentifier The image identifier
@@ -224,4 +228,11 @@ interface DatabaseInterface {
      * @return boolean
      */
     function deleteShortUrls($user, $imageIdentifier, $shortUrlId = null);
+
+    /**
+     * Return a list of the users present in the database
+     *
+     * @return string[]
+     */
+    function getAllUsers();
 }

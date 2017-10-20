@@ -10,29 +10,24 @@
 
 namespace Imbo\Database;
 
-use Imbo\Model\Image,
-    Imbo\Model\Images,
-    Imbo\Resource\Images\Query,
-    Imbo\Exception\DatabaseException,
-    Imbo\Exception\InvalidArgumentException,
-    Imbo\Exception,
-    Doctrine\DBAL\DriverManager,
-    Doctrine\DBAL\Connection,
-    PDO,
-    PDOException,
-    DateTime,
-    DateTimeZone;
+use Imbo\Model\Image;
+use Imbo\Model\Images;
+use Imbo\Resource\Images\Query;
+use Imbo\Exception\DatabaseException;
+use Imbo\Exception\InvalidArgumentException;
+use Imbo\Exception\DuplicateImageIdentifierException;
+use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\DBALException;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
+use PDO;
+use DateTime;
+use DateTimeZone;
 
 /**
  * Doctrine 2 database driver
  *
- * Parameters for this driver:
- *
- * - <pre>(string) dbname</pre> Name of the database to connect to
- * - <pre>(string) user</pre> Username to use when connecting
- * - <pre>(string) password</pre> Password to use when connecting
- * - <pre>(string) host</pre> Hostname to use when connecting
- * - <pre>(string) driver</pre> Which driver to use
+ * Refer to http://docs.doctrine-project.org/projects/doctrine-dbal/en/latest for configuration parameters
  *
  * @author Christer Edvartsen <cogo@starzinger.net>
  * @package Database
@@ -43,13 +38,7 @@ class Doctrine implements DatabaseInterface {
      *
      * @var array
      */
-    private $params = [
-        'dbname'   => null,
-        'user'     => null,
-        'password' => null,
-        'host'     => null,
-        'driver'   => null,
-    ];
+    private $params = [];
 
     /**
      * Default table names for the database
@@ -80,20 +69,23 @@ class Doctrine implements DatabaseInterface {
      * Class constructor
      *
      * @param array $params Parameters for the driver
-     * @param Connection $connection Optional connection instance. Primarily used for testing
+     * @throws InvalidArgumentException
      */
-    public function __construct(array $params, Connection $connection = null) {
-        $this->params = array_merge($this->params, $params);
-
-        if ($connection !== null) {
-            $this->setConnection($connection);
+    public function __construct(array $params) {
+        if (isset($params['pdo'])) {
+            throw new InvalidArgumentException(sprintf(
+                "The usage of 'pdo' in the configuration for %s is not allowed, use 'driver' instead",
+                __CLASS__
+            ), 500);
         }
+
+        $this->params = $params;
     }
 
     /**
      * {@inheritdoc}
      */
-    public function insertImage($user, $imageIdentifier, Image $image) {
+    public function insertImage($user, $imageIdentifier, Image $image, $updateIfDuplicate = true) {
         $now = time();
 
         if ($added = $image->getAddedDate()) {
@@ -104,27 +96,39 @@ class Doctrine implements DatabaseInterface {
             $updated = $updated->getTimestamp();
         }
 
-        if ($id = $this->getImageId($user, $imageIdentifier)) {
-            return (boolean) $this->getConnection()->update($this->tableNames['imageinfo'], [
+        if ($updateIfDuplicate && $id = $this->getImageId($user, $imageIdentifier)) {
+            return (boolean)$this->getConnection()->update($this->tableNames['imageinfo'], [
                 'updated' => $now,
             ], [
                 'id' => $id
             ]);
         }
 
-        return (boolean) $this->getConnection()->insert($this->tableNames['imageinfo'], [
-            'size'             => $image->getFilesize(),
-            'user'             => $user,
-            'imageIdentifier'  => $imageIdentifier,
-            'extension'        => $image->getExtension(),
-            'mime'             => $image->getMimeType(),
-            'added'            => $added ?: $now,
-            'updated'          => $updated ?: $now,
-            'width'            => $image->getWidth(),
-            'height'           => $image->getHeight(),
-            'checksum'         => $image->getChecksum(),
-            'originalChecksum' => $image->getOriginalChecksum(),
-        ]);
+        try {
+            $result = $this->getConnection()->insert($this->tableNames['imageinfo'], [
+                'size' => $image->getFilesize(),
+                'user' => $user,
+                'imageIdentifier' => $imageIdentifier,
+                'extension' => $image->getExtension(),
+                'mime' => $image->getMimeType(),
+                'added' => $added ?: $now,
+                'updated' => $updated ?: $now,
+                'width' => $image->getWidth(),
+                'height' => $image->getHeight(),
+                'checksum' => $image->getChecksum(),
+                'originalChecksum' => $image->getOriginalChecksum(),
+            ]);
+        } catch (UniqueConstraintViolationException $e) {
+            throw new DuplicateImageIdentifierException(
+                'Duplicate image identifier when attempting to insert image into DB.',
+                503,
+                $e
+            );
+        } catch (DBALException $e) {
+            throw new DatabaseException('Unable to save image data', 500, $e);
+        }
+
+        return (boolean) $result;
     }
 
     /**
@@ -235,16 +239,18 @@ class Doctrine implements DatabaseInterface {
         $qb = $this->getConnection()->createQueryBuilder();
         $qb->select('*')->from($this->tableNames['imageinfo'], 'i');
 
-        // Filter on users
-        $expr = $qb->expr();
-        $composite = $expr->orX();
+        if ($users) {
+            // Filter on users
+            $expr = $qb->expr();
+            $composite = $expr->orX();
 
-        foreach ($users as $i => $user) {
-            $composite->add($expr->eq('i.user', ':user' . $i));
-            $qb->setParameter(':user' . $i, $user);
+            foreach ($users as $i => $user) {
+                $composite->add($expr->eq('i.user', ':user' . $i));
+                $qb->setParameter(':user' . $i, $user);
+            }
+
+            $qb->where($composite);
         }
-
-        $qb->where($composite);
 
         if ($sort = $query->sort()) {
             // Fields valid for sorting
@@ -409,21 +415,24 @@ class Doctrine implements DatabaseInterface {
      */
     public function getLastModified(array $users, $imageIdentifier = null) {
         $query = $this->getConnection()->createQueryBuilder();
-        $query->select('updated')
-              ->from($this->tableNames['imageinfo'], 'i');
+        $query->select('i.updated')
+              ->from($this->tableNames['imageinfo'], 'i')
+              ->orderBy('i.updated', 'DESC')
+              ->setMaxResults(1);
 
-        // Filter on users
-        $expr = $query->expr();
-        $composite = $expr->orX();
+        if (!empty($users)) {
+            $expr = $query->expr();
+            $composite = $expr->orX();
 
-        foreach ($users as $i => $user) {
-            $composite->add($expr->eq('i.user', ':user' . $i));
-            $query->setParameter(':user' . $i, $user);
+            foreach ($users as $i => $user) {
+                $composite->add($expr->eq('i.user', ':user' . $i));
+                $query->setParameter(':user' . $i, $user);
+            }
+
+            $query->where($composite);
         }
 
-        $query->where($composite);
-
-        if ($imageIdentifier) {
+        if ($imageIdentifier !== null) {
             $query->andWhere('i.imageIdentifier = :imageIdentifier')
                   ->setParameter(':imageIdentifier', $imageIdentifier);
         }
@@ -431,7 +440,7 @@ class Doctrine implements DatabaseInterface {
         $stmt = $query->execute();
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if (!$row && $imageIdentifier) {
+        if (!$row && $imageIdentifier !== null) {
             throw new DatabaseException('Image not found', 404);
         } else if (!$row) {
             $row = ['updated' => time()];
@@ -497,7 +506,7 @@ class Doctrine implements DatabaseInterface {
             $connection = $this->getConnection();
 
             return $connection->isConnected() || $connection->connect();
-        } catch (PDOException $e) {
+        } catch (DBALException $e) {
             return false;
         }
     }
@@ -624,15 +633,14 @@ class Doctrine implements DatabaseInterface {
     }
 
     /**
-     * Set the connection instance
-     *
-     * @param Connection $connection The connection instance
-     * @return self
+     * {@inheritdoc}
      */
-    private function setConnection(Connection $connection) {
-        $this->connection = $connection;
+    public function getAllUsers() {
+        $query = $this->getConnection()->createQueryBuilder();
+        $query->select('DISTINCT(i.user)')
+              ->from($this->tableNames['imageinfo'], 'i');
 
-        return $this;
+        return array_column($query->execute()->fetchAll(), 'user');
     }
 
     /**
@@ -640,7 +648,7 @@ class Doctrine implements DatabaseInterface {
      *
      * @return Connection
      */
-    private function getConnection() {
+    protected function getConnection() {
         if ($this->connection === null) {
             $this->connection = DriverManager::getConnection($this->params);
         }

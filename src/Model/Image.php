@@ -20,17 +20,6 @@ use DateTime;
  */
 class Image implements ModelInterface {
     /**
-     * Supported mime types and the correct file extensions
-     *
-     * @var array
-     */
-    static public $mimeTypes = [
-        'image/png'  => 'png',
-        'image/jpeg' => 'jpg',
-        'image/gif'  => 'gif',
-    ];
-
-    /**
      * Mapping for some mime types
      *
      * @var array
@@ -454,30 +443,5 @@ class Image implements ModelInterface {
             'originalChecksum' => $this->getOriginalChecksum(),
             'hasBeenTransformed' => $this->hasBeenTransformed(),
         ];
-    }
-
-    /**
-     * Check if a mime type is supported by Imbo
-     *
-     * @param string $mime The mime type to check. For instance "image/png"
-     * @return boolean
-     */
-    static public function supportedMimeType($mime) {
-        return isset(self::$mimeTypeMapping[$mime]) || isset(self::$mimeTypes[$mime]);
-    }
-
-    /**
-     * Get the file extension mapped to a mime type
-     *
-     * @param string $mime The mime type. For instance "image/png"
-     * @return boolean|string The extension (without the leading dot) on success or boolean false
-     *                        if the mime type is not supported.
-     */
-    static public function getFileExtension($mime) {
-        if (isset(self::$mimeTypeMapping[$mime])) {
-            $mime = self::$mimeTypeMapping[$mime];
-        }
-
-        return isset(self::$mimeTypes[$mime]) ? self::$mimeTypes[$mime] : false;
     }
 }

@@ -26,6 +26,8 @@ class ImagickTest extends ListenerTests {
     private $request;
     private $response;
     private $event;
+    private $transformationManager;
+    private $inputLoaderManager;
 
     /**
      * Set up the listener
@@ -33,9 +35,13 @@ class ImagickTest extends ListenerTests {
     public function setUp() {
         $this->request = $this->createMock('Imbo\Http\Request\Request');
         $this->response = $this->createMock('Imbo\Http\Response\Response');
+        $this->transformationManager = $this->createMock('Imbo\Image\TransformationManager');
         $this->event = $this->createMock('Imbo\EventManager\Event');
+        $this->inputLoaderManager = $this->createMock('Imbo\Image\InputLoaderManager');
         $this->event->expects($this->any())->method('getRequest')->will($this->returnValue($this->request));
         $this->event->expects($this->any())->method('getResponse')->will($this->returnValue($this->response));
+        $this->event->expects($this->any())->method('getTransformationManager')->will($this->returnValue($this->transformationManager));
+        $this->event->expects($this->any())->method('getInputLoaderManager')->will($this->returnValue($this->inputLoaderManager));
 
         $this->listener = new Imagick();
     }
@@ -65,15 +71,14 @@ class ImagickTest extends ListenerTests {
     public function testFetchesImageFromRequest() {
         $image = $this->createMock('Imbo\Model\Image');
         $image->expects($this->once())->method('getBlob')->will($this->returnValue('image'));
+        $image->expects($this->any())->method('getMimeType')->will($this->returnValue('image/jpeg'));
 
         $this->request->expects($this->once())->method('getImage')->will($this->returnValue($image));
 
-        $imagick = $this->createMock('Imagick');
-        $imagick->expects($this->once())->method('readImageBlob')->with('image');
+        $this->inputLoaderManager->expects($this->once())->method('load')->with('image/jpeg', 'image');
 
         $this->event->expects($this->once())->method('getName')->will($this->returnValue('images.post'));
-
-        $this->listener->setImagick($imagick)->readImageBlob($this->event);
+        $this->listener->readImageBlob($this->event);
     }
 
     /**
@@ -83,15 +88,15 @@ class ImagickTest extends ListenerTests {
     public function testFetchesImageFromResponse() {
         $image = $this->createMock('Imbo\Model\Image');
         $image->expects($this->once())->method('getBlob')->will($this->returnValue('image'));
+        $image->expects($this->any())->method('getMimeType')->will($this->returnValue('image/jpeg'));
 
         $this->response->expects($this->once())->method('getModel')->will($this->returnValue($image));
 
-        $imagick = $this->createMock('Imagick');
-        $imagick->expects($this->once())->method('readImageBlob')->with('image');
+        $this->inputLoaderManager->expects($this->once())->method('load')->with('image/jpeg', 'image');
 
         $this->event->expects($this->once())->method('getName')->will($this->returnValue('storage.image.load'));
 
-        $this->listener->setImagick($imagick)->readImageBlob($this->event);
+        $this->listener->readImageBlob($this->event);
     }
 
     /**

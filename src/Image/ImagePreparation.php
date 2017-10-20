@@ -14,6 +14,7 @@ use Imbo\EventManager\EventInterface,
     Imbo\EventListener\ListenerInterface,
     Imbo\Image\Identifier\Generator\GeneratorInterface,
     Imbo\Exception\ImageException,
+    Imbo\Exception\LoaderException,
     Imbo\Exception,
     Imbo\Model\Image,
     Imagick,
@@ -61,22 +62,32 @@ class ImagePreparation implements ListenerInterface {
         // Fetch mime using finfo
         $mime = (new finfo(FILEINFO_MIME_TYPE))->buffer($imageBlob);
 
-        if (!Image::supportedMimeType($mime)) {
-            $e = new ImageException('Unsupported image type: ' . $mime, 415);
-            $e->setImboErrorCode(Exception::IMAGE_UNSUPPORTED_MIMETYPE);
-
-            throw $e;
+        if (isset(Image::$mimeTypeMapping[$mime])) {
+            $mime = Image::$mimeTypeMapping[$mime];
         }
 
-        // Open the image with imagick to make sure it's valid and to fetch dimensions
-        $imagick = new Imagick();
+        // The loader for the format determined that the image was borked. We set up the image
+        // exception here since we're catching multiple exceptions below
+        $invalidImageException = new ImageException('Invalid image', 415);
+        $invalidImageException->setImboErrorCode(Exception::IMAGE_INVALID_IMAGE);
 
+        // Attempt to load the image through one of the registered loaders
         try {
-            $imagick->readImageBlob($imageBlob);
-            $size = $imagick->getImageGeometry();
+            $imagick = $event->getInputLoaderManager()->load($mime, $imageBlob);
+
+            if ($imagick) {
+                $size = $imagick->getImageGeometry();
+            }
         } catch (ImagickException $e) {
-            $e = new ImageException('Invalid image', 415);
-            $e->setImboErrorCode(Exception::IMAGE_INVALID_IMAGE);
+            throw $invalidImageException;
+        } catch (LoaderException $e) {
+            throw $invalidImageException;
+        }
+
+        // Unsupported image type
+        if (!$imagick) {
+            $e = new ImageException('Unsupported image type: ' . $mime, 415);
+            $e->setImboErrorCode(Exception::IMAGE_UNSUPPORTED_MIMETYPE);
 
             throw $e;
         }
@@ -84,62 +95,12 @@ class ImagePreparation implements ListenerInterface {
         // Store relevant information in the image instance and attach it to the request
         $image = new Image();
         $image->setMimeType($mime)
-              ->setExtension(Image::getFileExtension($mime))
+              ->setExtension($event->getInputLoaderManager()->getExtensionFromMimetype($mime))
               ->setBlob($imageBlob)
               ->setWidth($size['width'])
               ->setHeight($size['height'])
               ->setOriginalChecksum(md5($imageBlob));
 
-        $imageIdentifier = $this->generateImageIdentifier($event, $image);
-        $image->setImageIdentifier($imageIdentifier);
-
         $request->setImage($image);
-    }
-
-    /**
-     * Using the configured image identifier generator, attempt to generate a unique image
-     * identifier for the given image until we either have found a unique ID or we hit the maximum
-     * allowed attempts.
-     *
-     * @param EventInterface $event The current event
-     * @param Image $image The event to generate the image identifier for
-     * @return string
-     * @throws ImageException
-     */
-    private function generateImageIdentifier(EventInterface $event, Image $image) {
-        $database = $event->getDatabase();
-        $config = $event->getConfig();
-        $user = $event->getRequest()->getUser();
-        $imageIdentifierGenerator = $config['imageIdentifierGenerator'];
-
-        if (is_callable($imageIdentifierGenerator) &&
-            !($imageIdentifierGenerator instanceof GeneratorInterface)) {
-            $imageIdentifierGenerator = $imageIdentifierGenerator();
-        }
-
-        if ($imageIdentifierGenerator->isDeterministic()) {
-            return $imageIdentifierGenerator->generate($image);
-        }
-
-        // Continue generating image identifiers until we get one that does not already exist
-        $maxAttempts = 100;
-        $attempts = 0;
-        do {
-            $imageIdentifier = $imageIdentifierGenerator->generate($image);
-            $attempts++;
-        } while ($attempts < $maxAttempts && $database->imageExists($user, $imageIdentifier));
-
-        // Did we reach our max attempts limit?
-        if ($attempts === $maxAttempts) {
-            $e = new ImageException('Failed to generate unique image identifier', 503);
-            $e->setImboErrorCode(Exception::IMAGE_IDENTIFIER_GENERATION_FAILED);
-
-            // Tell the client it's OK to retry later
-            $event->getResponse()->headers->set('Retry-After', 1);
-
-            throw $e;
-        }
-
-        return $imageIdentifier;
     }
 }

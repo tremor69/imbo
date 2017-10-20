@@ -1,5 +1,6 @@
 <?php
 use Imbo\Resource;
+use MongoDB\BSON\ObjectId as MongoId;
 
 return [
     'accesscontrol' => [
@@ -21,6 +22,8 @@ return [
                         Resource::ACCESS_RULES_GET,
                         Resource::ACCESS_RULES_HEAD,
                         Resource::ACCESS_RULES_POST,
+
+                        Resource::GROUP_DELETE,
                     ],
                     'users' => []
                 ],

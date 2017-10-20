@@ -22,7 +22,7 @@ use Imbo\EventManager\EventInterface;
  * @author Christer Edvartsen <cogo@starzinger.net>
  * @package Event\Listeners
  */
-class Imagick implements ListenerInterface {
+class Imagick implements ListenerInterface, ImagickAware {
     /**
      * Imagick instance that is injected by an initializer
      *
@@ -31,12 +31,9 @@ class Imagick implements ListenerInterface {
     private $imagick;
 
     /**
-     * Set the local \Imagick property
-     *
-     * @param \Imagick $imagick An Imagick instance
-     * @return self
+     * {@inheritdoc}
      */
-    public function setImagick($imagick) {
+    public function setImagick(\Imagick $imagick) {
         $this->imagick = $imagick;
 
         return $this;
@@ -61,7 +58,7 @@ class Imagick implements ListenerInterface {
             ],
 
             // Inject the image blob into the image model after loading it from the database
-            'image.loaded' => ['readImageBlob' => -10],
+            'image.loaded' => ['readImageBlob' => 100],
         ];
     }
 
@@ -71,10 +68,14 @@ class Imagick implements ListenerInterface {
      * @param EventInterface $event The event instance
      */
     public function readImageBlob(EventInterface $event) {
+        $eventName = $event->getName();
+        $config = $event->getConfig();
+        $jpegSizeHintEnabled = $config['optimizations']['jpegSizeHint'];
+
         if ($event->hasArgument('image')) {
             // The image has been specified as an argument to the event
             $image = $event->getArgument('image');
-        } else if ($event->getName() === 'images.post') {
+        } else if ($eventName === 'images.post') {
             // The image is found in the request
             $image = $event->getRequest()->getImage();
         } else {
@@ -82,8 +83,29 @@ class Imagick implements ListenerInterface {
             $image = $event->getResponse()->getModel();
         }
 
+        $shouldOptimize = $jpegSizeHintEnabled && !$event->hasArgument('skipOptimization');
+
+        if ($shouldOptimize && $eventName === 'image.loaded') {
+            // See if we can hint to imagick that we expect a smaller output
+            $minSize = $event->getTransformationManager()->getMinimumImageInputSize($event);
+
+            if ($minSize) {
+                $inputSize = $minSize['width'] . 'x' . $minSize['height'];
+                $this->imagick->setOption('jpeg:size', $inputSize);
+            }
+        }
+
         // Inject the image blob
-        $this->imagick->readImageBlob($image->getBlob());
+        $event->getInputLoaderManager()->load($image->getMimeType(), $image->getBlob());
+
+        // If we have specified a size hint, check if we have a different input size
+        // than the original and set the ratio as an argument for any other listeners
+        if (isset($inputSize)) {
+            $newSize = $this->imagick->getImageGeometry();
+            $ratio = $image->getWidth() / $newSize['width'];
+            $event->setArgument('ratio', $ratio);
+            $event->setArgument('transformationIndex', $minSize['index']);
+        }
     }
 
     /**
