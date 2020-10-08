@@ -28,6 +28,8 @@ use Imbo\Exception\StorageException,
  * - (string) bucket The name of the bucket to store the files in. The bucket should exist prior
  *                   to using this client. Imbo will not try to automatically add the bucket for
  *                   you.
+ * - (string) endpoint url use in combination with "use_path_style_endpoint"
+ * - (bool)   use_path_style_endpoint flag to use endpoint and append bucket to this endpoint
  *
  * @author Christer Edvartsen <cogo@starzinger.net>
  * @package Storage
@@ -54,6 +56,13 @@ class S3 implements StorageInterface {
 
         // Name of the bucket to store the files in
         'bucket' => null,
+
+        // Set to true to send requests to an S3 path style endpoint by default. Can be enabled or disabled on individual
+        // '@use_path_style_endpoint\' to true or false. Note: you cannot use it together with an accelerate endpoint.
+        'use_path_style_endpoint' => null,
+
+        // use in combination with "use_path_style_endpoint"
+        'endpoint' => ''
 
         // Region
         'region' => null,
@@ -85,6 +94,13 @@ class S3 implements StorageInterface {
                 throw new ConfigurationException(
                     'Missing required configuration parameters in ' . __CLASS__ . ': ' .
                     join(', ', $missingFields)
+                );
+            }
+
+            if ($this->params['use_path_style_endpoint'] && $this->params['endpoint'] === '') {
+                throw new ConfigurationException(
+                    'Missing required configuration parameters after enabling use_path_style_endpoint in ' . __CLASS__ . ':
+                     use_path_style_endpoint is true, endpoint is empty string'
                 );
             }
         }
@@ -233,6 +249,11 @@ class S3 implements StorageInterface {
 
             if ($this->params['region']) {
                 $params['region'] = $this->params['region'];
+            }
+
+            if ($this->params['use_path_style_endpoint']) {
+                $params['use_path_style_endpoint'] = $this->params['use_path_style_endpoint'];
+                $params['endpoint'] = $this->params['endpoint'];
             }
 
             $this->client = new S3Client($params);
