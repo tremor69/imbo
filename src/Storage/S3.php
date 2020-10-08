@@ -117,7 +117,7 @@ class S3 implements StorageInterface {
                 'Body' => $imageData,
             ]);
         } catch (S3Exception $e) {
-            throw new StorageException('Could not store image', 500);
+            throw new StorageException('Could not store image , error : '. $e, 500);
         }
 
         return true;
