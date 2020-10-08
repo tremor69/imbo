@@ -57,7 +57,7 @@ class Filesystem implements StorageInterface {
      */
     public function store($user, $imageIdentifier, $imageData) {
         if (!is_writable($this->getParams()['dataDir'])) {
-            throw new StorageException('Could not store image', 500);
+            throw new StorageException('Could not store image filesystem', 500);
         }
 
         if ($this->imageExists($user, $imageIdentifier)) {
