@@ -62,7 +62,7 @@ class S3 implements StorageInterface {
         'use_path_style_endpoint' => null,
 
         // use in combination with "use_path_style_endpoint"
-        'endpoint' => ''
+        'endpoint' => '',
 
         // Region
         'region' => null,
@@ -117,6 +117,7 @@ class S3 implements StorageInterface {
                 'Body' => $imageData,
             ]);
         } catch (S3Exception $e) {
+            error_log($e);
             throw new StorageException('Could not store image , error : '. $e, 500);
         }
 
